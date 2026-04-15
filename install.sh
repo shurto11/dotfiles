@@ -8,5 +8,12 @@ if [ "$DOTFILES_DIR" != "$HOME/.dotfiles" ]; then
 fi
 
 sudo apt install -y stow
+
+# 既存ファイルをバックアップして削除（stowのコンフリクト回避）
+for file in $(stow --simulate -d "$DOTFILES_DIR" -t "$HOME" home 2>&1 | grep "existing target" | awk '{print $NF}'); do
+    echo "backing up ~/$file"
+    mv "$HOME/$file" "$HOME/$file.bak"
+done
+
 cd "$DOTFILES_DIR"
 stow home
