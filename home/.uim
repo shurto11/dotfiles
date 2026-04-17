@@ -1,0 +1,19 @@
+(define default-im-name 'mozc)
+
+;;(define default-im-name 'm17n-ko-romaja)
+;;(require-module "m17nlib")
+
+(define-key generic-on-key? '("<Control> " "<Super> "))
+(define-key generic-off-key? '("<Control> " "<Super> "))
+
+;;(define mozc-use-with-vi? #t)
+
+;; IM toggle: mozc (Japanese) <-> byeoru (Korean) with F8
+(define enabled-im-list '(mozc byeoru direct))
+(define enable-im-toggle? #t)
+(define-key toggle-im-key? '("F8"))
+(define toggle-im-alt-im 'byeoru)
+
+;; byeoru on/off: use Ctrl+Space or Super+Space (same as mozc)
+(define-key byeoru-on-key? '("<Control> " "<Super> "))
+(define-key byeoru-latin-key? '("<Control> " "<Super> "))
