@@ -16,6 +16,7 @@ for file in $(stow --simulate -d "$DOTFILES_DIR" -t "$HOME" home 2>&1 | grep "ex
 done
 
 cd "$DOTFILES_DIR"
+git submodule update --init --recursive
 stow home
 
 # rustup/cargo のインストール
