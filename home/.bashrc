@@ -160,6 +160,7 @@ mkcd() {
 alias mkcd="mkcd"
 
 # tmux の自動起動（fbterm 内で、まだ tmux セッション内にいない場合）
+export TMUX_TMPDIR=/home/shurto11/ssd/ssbrowse
 if [ "$TERM" = "fbterm" ] && [ -z "$TMUX" ]; then
     tmux
 fi
