@@ -160,7 +160,9 @@ mkcd() {
 alias mkcd="mkcd"
 
 # tmux の自動起動（fbterm 内で、まだ tmux セッション内にいない場合）
-export TMUX_TMPDIR=/home/shurto11/ssd/ssbrowse
+# ソケットは ssd 上に置かない（ssd の unmount/remount で tmux に到達できなくなるため）。
+# /run/user/<uid> は tmpfs でログイン中ずっと安定し、ssd とは無関係。
+export TMUX_TMPDIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 if [ "$TERM" = "fbterm" ] && [ -z "$TMUX" ]; then
     tmux
 fi
