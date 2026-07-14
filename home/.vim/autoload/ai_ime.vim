@@ -1,0 +1,1 @@
+/home/shurto11/ssd/tools/ai-ime/autoload/ai_ime.vim
