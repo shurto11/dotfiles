@@ -29,6 +29,26 @@ inoremap ( ()<LEFT>
 inoremap [ []<LEFT>
 inoremap " ""<LEFT>
 
+"" 空の {} 内で Enter を押したら、間に空行を作る
+"" （filetype の indentexpr に依存せず明示的に行を組み立てる）
+"function! s:expand_brackets() abort
+"  let l:lnum  = line('.')
+"  let l:line  = getline(l:lnum)
+"  let l:cidx  = col('.') - 1                      " } の位置（0-based）
+"  let l:before = strpart(l:line, 0, l:cidx)       " '... {'
+"  let l:after  = strpart(l:line, l:cidx)          " '} ...'
+"  let l:base   = matchstr(l:line, '^\s*')         " 開き行のインデント
+"  let l:mid    = l:base . repeat(' ', shiftwidth())
+"  call setline(l:lnum, l:before)
+"  call append(l:lnum, [l:mid, l:base . l:after])  " 中間行 / 閉じ行は base のまま
+"  call cursor(l:lnum + 1, strlen(l:mid) + 1)
+"endfunction
+"
+"inoremap <silent><expr> <CR>
+"      \ (col('.') > 1 && getline('.')[col('.') - 2] ==# '{' && getline('.')[col('.') - 1] ==# '}')
+"      \ ? "\<C-\>\<C-o>:call \<SID>expand_brackets()\<CR>"
+"      \ : "\<CR>"
+
 " プラグイン
 call plug#begin('~/.vim/plugged')
 Plug 'vim-airline/vim-airline'
@@ -47,3 +67,27 @@ augroup my-glyph-palette
 augroup END
 
 set runtimepath+=/home/shurto11/ssd/vimtube
+
+" 無名レジスタをc/d/yレジスタにコピー
+function! UseEasyRegname()
+    if v:event.regname ==# ''
+        call setreg(v:event.operator, getreg())
+    endif
+endfunction
+
+augroup UseEasyRegname
+    autocmd!
+    au TextYankPost * call UseEasyRegname()
+augroup END
+
+" touch-server vim-client
+if !empty($TMUX)
+let s:tsbin = expand('~/ssd/tools/touch-server/target/release/touch-server')
+if executable(s:tsbin)
+  if has('nvim')
+    autocmd VimEnter * call jobstart([s:tsbin, 'vim-client'])
+  else
+    autocmd VimEnter * call job_start([s:tsbin, 'vim-client'])
+  endif
+endif
+endif
