@@ -4,7 +4,7 @@
 ;;(require-module "m17nlib")
 
 (define-key generic-on-key? '("<Control> " "<Super> "))
-(define-key generic-off-key? '("<Control> " "<Super> "))
+(define-key generic-off-key? '("<Control> " "<Super> " "<Control>b"))
 
 ;;(define mozc-use-with-vi? #t)
 
