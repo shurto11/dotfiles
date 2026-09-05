@@ -91,3 +91,38 @@ if executable(s:tsbin)
   endif
 endif
 endif
+
+" ターミナルビューワー
+
+" 非アクティブペインのグレー化（tmuxのwindow-styleはvimに効かないため自前で行う）
+" tmux側の 'bg=color236,fg=color248' に合わせて全ハイライトを平坦化する
+if !has('gui_running')
+  " screen/tmux系TERMでもフォーカスレポートを有効化
+  let &t_fe = "\<Esc>[?1004h"
+  let &t_fd = "\<Esc>[?1004l"
+
+  let s:dimmed = 0
+
+  function! s:DimOn() abort
+    if s:dimmed | return | endif
+    let s:dimmed = 1
+    for l:group in getcompletion('', 'highlight')
+      silent! execute 'highlight' l:group 'ctermfg=248 ctermbg=236 cterm=NONE'
+    endfor
+    silent! highlight Normal ctermfg=248 ctermbg=236 cterm=NONE
+    redraw
+  endfunction
+
+  function! s:DimOff() abort
+    if !s:dimmed | return | endif
+    let s:dimmed = 0
+    silent! colorscheme habamax
+    redraw
+  endfunction
+
+  augroup DimInactivePane
+    autocmd!
+    autocmd FocusLost   * call s:DimOn()
+    autocmd FocusGained * call s:DimOff()
+  augroup END
+endif
