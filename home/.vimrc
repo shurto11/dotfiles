@@ -96,15 +96,18 @@ endif
 
 " 非アクティブペインのグレー化（tmuxのwindow-styleはvimに効かないため自前で行う）
 " tmux側の 'bg=color236,fg=color248' に合わせて全ハイライトを平坦化する
-if !has('gui_running')
+if !has('gui_running') && exists('*hlget')
   " screen/tmux系TERMでもフォーカスレポートを有効化
   let &t_fe = "\<Esc>[?1004h"
   let &t_fd = "\<Esc>[?1004l"
 
   let s:dimmed = 0
+  let s:saved_hl = []
 
   function! s:DimOn() abort
     if s:dimmed | return | endif
+    " airlineなどが動的に生成したハイライトも含めて丸ごと退避する
+    let s:saved_hl = hlget()
     let s:dimmed = 1
     for l:group in getcompletion('', 'highlight')
       silent! execute 'highlight' l:group 'ctermfg=248 ctermbg=236 cterm=NONE'
@@ -116,7 +119,12 @@ if !has('gui_running')
   function! s:DimOff() abort
     if !s:dimmed | return | endif
     let s:dimmed = 0
-    silent! colorscheme habamax
+    " 一度全消ししてから退避分を戻す。こうしないと平坦化で付けた
+    " ctermfg/ctermbg が残り、リンク（airline_tabsel等）が復元されない
+    call hlset(map(getcompletion('', 'highlight'),
+          \ {_, v -> {'name': v, 'cleared': v:true, 'force': v:true}}))
+    call hlset(map(copy(s:saved_hl), {_, v -> extend(copy(v), {'force': v:true})}))
+    let s:saved_hl = []
     redraw
   endfunction
 
