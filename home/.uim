@@ -17,3 +17,59 @@
 ;; byeoru on/off: use Ctrl+Space or Super+Space (same as mozc)
 (define-key byeoru-on-key? '("<Control> " "<Super> "))
 (define-key byeoru-latin-key? '("<Control> " "<Super> "))
+
+;;; ------------------------------------------------------------------
+;;; 日本語入力中に j を 2 回続けて打ったら英数(直接入力)へ戻す
+;;;   1) 未確定の "j" を取り消し、変換中の文字列は確定する
+;;;   2) mozc を直接入力(英数)に切り替える
+;;;   3) アプリケーションには "jj" をそのまま送る
+;;;      → vim の inoremap jj <Esc> がそのまま効く
+;;; ------------------------------------------------------------------
+(require-module "mozc")
+
+(define mozc-jj-key 106)           ; 'j' の ASCII コード
+(define mozc-jj-passthrough "jj")  ; アプリケーションへ送る文字列
+(define mozc-jj-prev-j? #f)
+
+(define mozc-jj-plain-j?
+  (lambda (key key-state)
+    (and (number? key)
+         (= key mozc-jj-key)
+         (= key-state 0))))
+
+;; mozc が日本語入力中 (直接入力でない) かどうか
+(define mozc-jj-japanese?
+  (lambda (mc)
+    (let ((mid (mozc-context-mc-id mc)))
+      (and mid
+           (not (= (mozc-lib-input-mode mid) mozc-type-direct))))))
+
+(define mozc-jj-escape
+  (lambda (mc)
+    (let ((mid (mozc-context-mc-id mc)))
+      (if mid
+          (begin
+            ;; 1 個目の j (未確定のローマ字) を取り消す
+            (mozc-lib-press-key mc mid (keysym-to-int 'backspace) 0)
+            ;; 残っている変換中の文字列を確定する
+            (if (mozc-lib-has-preedit? mid)
+                (mozc-lib-submit-composition mc mid))
+            ;; 英数 (直接入力) へ切り替える
+            (mozc-lib-set-input-mode mc mid mozc-type-direct))))
+    (im-commit mc mozc-jj-passthrough)))
+
+(define mozc-jj-orig-proc-input-state mozc-proc-input-state)
+
+(define mozc-proc-input-state
+  (lambda (mc key key-state)
+    (cond
+      ((not (and (mozc-jj-plain-j? key key-state)
+                 (mozc-jj-japanese? mc)))
+       (set! mozc-jj-prev-j? #f)
+       (mozc-jj-orig-proc-input-state mc key key-state))
+      (mozc-jj-prev-j?
+       (set! mozc-jj-prev-j? #f)
+       (mozc-jj-escape mc))
+      (else
+       (set! mozc-jj-prev-j? #t)
+       (mozc-jj-orig-proc-input-state mc key key-state)))))
