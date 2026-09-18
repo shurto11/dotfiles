@@ -24,7 +24,11 @@ fi
 if [ "$TERM" = "linux" ]; then
     echo "fbterm+tmux を起動します（スキップするには2秒以内にキーを押してください）"
     if ! read -t 2 -n 1 -s; then
-        FBTERM=1 exec fbterm -- uim-fep
+        # fbterm は FBTERM_BACKGROUND_IMAGE を立てて起動すると、起動時点の
+        # フレームバッファ内容を背景画像として保持し、背景色が色0(黒)のセルを
+        # 塗りつぶす代わりにそこから復元する。壁紙を先に fb0 へ描いてから起動する。
+        "$HOME/ssd/tools/tmux-session/target/release/fbterm-wallpaper" 2>/dev/null
+        FBTERM=1 FBTERM_BACKGROUND_IMAGE=1 exec fbterm -- uim-fep
     fi
     echo "スキップしました。生のコンソールで起動します。"
 fi
