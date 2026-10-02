@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# html2png: HTML をページ分割して PNG に変換する (wkhtmltopdf + pdftoppm)
+# 出力は pdftoppm と同じく <output-root>-1.png, <output-root>-2.png, ...
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+使い方: $(basename "$0") [options] <input.html> <output-root>
+
+  <output-root>-1.png, <output-root>-2.png, ... を出力します。
+
+options:
+  -r <dpi>     解像度 (default: 120)
+  -s <size>    用紙サイズ A4, A3, Letter など (default: A4)
+  -m <margin>  余白 (default: 10mm)
+  -O <orient>  Portrait / Landscape (default: Portrait)
+  -k           中間の PDF を <output-root>.pdf として残す
+  -h           このヘルプを表示
+EOF
+}
+
+dpi=120
+size=A4
+margin=10mm
+orient=Portrait
+keep_pdf=0
+
+while getopts "r:s:m:O:kh" opt; do
+  case $opt in
+    r) dpi=$OPTARG ;;
+    s) size=$OPTARG ;;
+    m) margin=$OPTARG ;;
+    O) orient=$OPTARG ;;
+    k) keep_pdf=1 ;;
+    h) usage; exit 0 ;;
+    *) usage >&2; exit 1 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+if [[ $# -ne 2 ]]; then
+  usage >&2
+  exit 1
+fi
+
+input=$1
+output=$2
+
+if [[ ! -f $input ]]; then
+  echo "error: $input が見つかりません" >&2
+  exit 1
+fi
+
+for cmd in wkhtmltopdf pdftoppm; do
+  command -v "$cmd" >/dev/null || { echo "error: $cmd がインストールされていません" >&2; exit 1; }
+done
+
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+pdf=$tmpdir/out.pdf
+
+wkhtmltopdf --quiet --enable-local-file-access \
+  -s "$size" -O "$orient" \
+  -T "$margin" -B "$margin" -L "$margin" -R "$margin" \
+  "$input" "$pdf"
+
+mkdir -p "$(dirname "$output")"
+pdftoppm -png -r "$dpi" "$pdf" "$output"
+
+if [[ $keep_pdf -eq 1 ]]; then
+  cp "$pdf" "$output.pdf"
+fi
+
+ls -1 "$output"-*.png
