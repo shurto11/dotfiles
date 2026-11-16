@@ -164,7 +164,7 @@ alias mkcd="mkcd"
 # /run/user/<uid> は tmpfs でログイン中ずっと安定し、ssd とは無関係。
 export TMUX_TMPDIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 if [ "$TERM" = "fbterm" ] && [ -z "$TMUX" ]; then
-    tmux
+    tmux attach 2>/dev/null || tmux   # 既存セッションへ復帰(fbterm再起動時)、無ければ新規
 fi
 . "$HOME/.cargo/env"
 
