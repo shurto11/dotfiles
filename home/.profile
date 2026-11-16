@@ -21,7 +21,7 @@ if [ -d "$HOME/bin" ] ; then
     PATH="$HOME/bin:$PATH"
 fi
 
-if [ "$TERM" = "linux" ]; then
+if [ "$TERM" = "linux" ] && [ -t 0 ]; then
     echo "fbterm+tmux を起動します（スキップするには2秒以内にキーを押してください）"
     if ! read -t 2 -n 1 -s; then
         # fbterm は FBTERM_BACKGROUND_IMAGE を立てて起動すると、起動時点の
