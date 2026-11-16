@@ -183,3 +183,28 @@ if [ -f '/home/shurto11/google-cloud-sdk/completion.bash.inc' ]; then . '/home/s
 # moonbit
 export PATH="$HOME/.moon/bin:$PATH"
 . "/home/shurto11/.deno/env"
+
+# 実行結果をファイルに
+#   run コマンド... >> ファイル      ファイルの末尾に追記
+#   run コマンド... >> ファイル N    ファイルの N 行目の後ろに挿入（0 なら先頭）
+run() {
+    local pid=$BASHPID out
+    out=$(readlink "/proc/$pid/fd/1")
+
+    # 出力先がファイルで、最後の引数が数字なら行番号とみなす
+    if [ $# -lt 2 ] || [ ! -f "$out" ] || ! [[ "${!#}" =~ ^[0-9]+$ ]]; then
+        echo "> \$ $*"; "$@"
+        return
+    fi
+
+    local line="${!#}"
+    set -- "${@:1:$#-1}"
+    if [ "$line" -gt "$(wc -l < "$out")" ]; then
+        echo "run: $out は $(wc -l < "$out") 行しかありません" >&2; return 1
+    fi
+    local tmp
+    tmp=$(mktemp) || return 1
+    { echo "> \$ $*"; "$@"; } > "$tmp"
+    sed -i "${line}r $tmp" "$out"
+    rm -f "$tmp"
+}
