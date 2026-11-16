@@ -4,7 +4,8 @@
 ;;(require-module "m17nlib")
 
 (define-key generic-on-key? '("<Control> " "<Super> "))
-(define-key generic-off-key? '("<Control> " "<Super> " "<Control>b"))
+;; Ctrl+b は下の mozc-prefix-key? で「英数へ切替 + tmux へ送る」を行う
+(define-key generic-off-key? '("<Control> " "<Super> "))
 
 ;;(define mozc-use-with-vi? #t)
 
@@ -58,11 +59,34 @@
             (mozc-lib-set-input-mode mc mid mozc-type-direct))))
     (im-commit mc mozc-jj-passthrough)))
 
+;;; ------------------------------------------------------------------
+;;; 日本語入力中に Ctrl+b を押したら、1 回で
+;;;   1) 変換中の文字列があれば確定し
+;;;   2) mozc を直接入力(英数)に切り替え
+;;;   3) Ctrl+b 自体もアプリケーションへ送る → tmux の prefix として効く
+;;; 英数モード中の Ctrl+b は元々素通しなので、そのまま tmux に届く
+;;; ------------------------------------------------------------------
+(define-key mozc-prefix-key? '("<Control>b"))
+
+(define mozc-prefix-passthrough
+  (lambda (mc)
+    (let ((mid (mozc-context-mc-id mc)))
+      (if mid
+          (begin
+            (if (mozc-lib-has-preedit? mid)
+                (mozc-lib-submit-composition mc mid))
+            (mozc-lib-set-input-mode mc mid mozc-type-direct))))
+    (im-commit-raw mc)))
+
 (define mozc-jj-orig-proc-input-state mozc-proc-input-state)
 
 (define mozc-proc-input-state
   (lambda (mc key key-state)
     (cond
+      ((and (mozc-prefix-key? key key-state)
+            (mozc-jj-japanese? mc))
+       (set! mozc-jj-prev-j? #f)
+       (mozc-prefix-passthrough mc))
       ((not (and (mozc-jj-plain-j? key key-state)
                  (mozc-jj-japanese? mc)))
        (set! mozc-jj-prev-j? #f)
