@@ -89,6 +89,68 @@ augroup UseEasyRegname
     au TextYankPost * call UseEasyRegname()
 augroup END
 
+" ---- ヤンクを他の vim と共有する（-clipboard ビルドなのでファイル経由）----
+"   y でヤンク → ~/.cache/vim/shared_yank に書き出す（tmux バッファにも送る）
+"   p/P/gp/gP  → 他の vim の方が新しくヤンクしていれば、それを無名レジスタに
+"                読み込んでから貼る（行単位・矩形もそのまま）。"ap 等のレジスタ指定時は何もしない
+"   自分の vim で後から d/c/x した場合はそちらが優先される
+let s:yank_file = expand('~/.cache/vim/shared_yank')
+let s:yank_seen = ''   " 最後に書いた/読んだ共有ヤンクの ID
+
+function! s:SharedYankId() abort
+  return filereadable(s:yank_file) ? get(readfile(s:yank_file, '', 1), 0, '') : ''
+endfunction
+
+function! s:OnYank() abort
+  if v:event.regname !=# ''
+    return
+  endif
+  if v:event.operator !=# 'y'
+    " d/c などで無名レジスタが変わった: 今ある共有ヤンクはこれより古いので既読扱い
+    let s:yank_seen = s:SharedYankId()
+    return
+  endif
+  let s:yank_seen = printf('%d-%s', getpid(), reltimestr(reltime()))
+  let l:tmp = s:yank_file . '.' . getpid()
+  call mkdir(fnamemodify(s:yank_file, ':h'), 'p', 0700)
+  call writefile([s:yank_seen, v:event.regtype] + v:event.regcontents, l:tmp)
+  call setfperm(l:tmp, 'rw-------')
+  call rename(l:tmp, s:yank_file)
+  if !empty($TMUX)
+    call system('tmux load-buffer -', join(v:event.regcontents, "\n") . (v:event.regtype ==# 'V' ? "\n" : ''))
+  endif
+endfunction
+
+function! s:LoadSharedYank() abort
+  let l:id = s:SharedYankId()
+  if l:id ==# '' || l:id ==# s:yank_seen
+    return
+  endif
+  let l:lines = readfile(s:yank_file)
+  let s:yank_seen = l:id
+  call setreg('"', l:lines[2:], l:lines[1])
+endfunction
+
+function! s:PasteKey(key) abort
+  if v:register ==# '"'
+    call s:LoadSharedYank()
+  endif
+  return a:key
+endfunction
+
+augroup SharedYank
+  autocmd!
+  autocmd TextYankPost * call s:OnYank()
+  autocmd FocusGained * call s:LoadSharedYank()
+augroup END
+
+for s:k in ['p', 'P', 'gp', 'gP']
+  execute 'nnoremap <expr>' s:k '<SID>PasteKey(' . string(s:k) . ')'
+  execute 'xnoremap <expr>' s:k '<SID>PasteKey(' . string(s:k) . ')'
+endfor
+unlet s:k
+" ---- ここまで ----
+
 " touch-server vim-client
 if !empty($TMUX)
 let s:tsbin = expand('~/ssd/fb/touch/touch-server/target/release/touch-server')
