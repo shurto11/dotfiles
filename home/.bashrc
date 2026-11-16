@@ -179,3 +179,7 @@ if [ -f '/home/shurto11/google-cloud-sdk/path.bash.inc' ]; then . '/home/shurto1
 
 # The next line enables shell command completion for gcloud.
 if [ -f '/home/shurto11/google-cloud-sdk/completion.bash.inc' ]; then . '/home/shurto11/google-cloud-sdk/completion.bash.inc'; fi
+
+# moonbit
+export PATH="$HOME/.moon/bin:$PATH"
+. "/home/shurto11/.deno/env"

@@ -41,3 +41,4 @@ fi
 # Created by `pipx` on 2025-12-13 09:49:01
 export PATH="$PATH:/home/shurto11/.local/bin"
 . "$HOME/.cargo/env"
+. "/home/shurto11/.deno/env"
