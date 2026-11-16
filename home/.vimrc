@@ -82,7 +82,7 @@ augroup END
 
 " touch-server vim-client
 if !empty($TMUX)
-let s:tsbin = expand('~/ssd/tools/touch-server/target/release/touch-server')
+let s:tsbin = expand('~/ssd/fb/touch/touch-server/target/release/touch-server')
 if executable(s:tsbin)
   if has('nvim')
     autocmd VimEnter * call jobstart([s:tsbin, 'vim-client'])
