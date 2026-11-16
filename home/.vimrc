@@ -23,6 +23,15 @@ set t_ut=
 
 set number
 
+" HTML/CSS はインデント2
+augroup html-indent
+  autocmd!
+  autocmd FileType html,css setlocal tabstop=2 shiftwidth=2 softtabstop=2
+augroup END
+
+" % で開始タグと終了タグを移動
+packadd! matchit
+
 " カッコ補完
 inoremap { {}<LEFT>
 inoremap ( ()<LEFT>
