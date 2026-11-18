@@ -239,6 +239,7 @@ __ps1_line1() {
     # 全体の幅: パス(pw+5) + 矢印2 + user@host(+5) + 矢印2 + 時刻(+5) + 行末の矢印1
     if (( pw + 5 + 2 + ${#uh} + 5 + 2 + ${#now} + 5 + 1 <= max )); then
         for (( j = 0; j < ${#st[@]}; j += 2 )); do out+=$s${st[j]}$e${st[j+1]}; done
+        __PS1_L1_W=( $(( pw + 5 + 2 + ${#uh} + 5 + 2 + ${#now} + 5 + 1 )) )
     else
         # 入らないので、幅の上限に達するまで左から1文字ずつ出す
         local used=0
@@ -253,6 +254,7 @@ __ps1_line1() {
                 (( used += __CW ))
             done
         done
+        __PS1_L1_W=( "$used" )
     fi
     __PS1_L1=$out$s$C_RESET$e
 }
@@ -294,6 +296,7 @@ __ps1_wrap_path() {
 
     local bw=0 w k pad out=
     for w in "${widths[@]}"; do (( w > bw )) && bw=$w; done
+    __PS1_L1_W=()
     for (( k = 0; k < ${#lines[@]}; k++ )); do
         printf -v pad '%*s' $(( bw - widths[k] )) ''
         (( k > 0 )) && out+=$'\n'
@@ -303,21 +306,74 @@ __ps1_wrap_path() {
             out+="$s$C_BG_WHITE$C_FG_BLACK$e    ${lines[k]}$pad "   # 2行目以降はパスの頭にそろえる
         fi
         out+=$s$C_RESET$e
+        __PS1_L1_W+=( $(( bw + 5 )) )
     done
     # 長方形の幅は bw+5。矢印の1マスが残っていれば最後の行に付ける
-    (( bw + 5 < max )) && out+="$s$C_FG_WHITE$e$ARROW$s$C_RESET$e"
+    if (( bw + 5 < max )); then
+        out+="$s$C_FG_WHITE$e$ARROW$s$C_RESET$e"
+        (( __PS1_L1_W[-1] += 1 ))
+    fi
     __PS1_L1=$out
 }
 
+# ---- ペインの幅が変わったら、表示中のプロンプトをその場で描き直す(tmux の中だけ) ----
+# readline は入力待ちの最初に展開したプロンプトを持ち続けるので、変数を変えても描き直されない。
+# そこで、幅が変わったら(SIGWINCH)次の手順で新しいプロンプトを出し直す:
+#   1. trap が tmux send-keys で、普段は打たないキー列 \e[9999~ を自分のペインへ送る
+#   2. そのキー列のマクロが「入力中の行とカーソル位置を退避して空にする → 空のまま Enter →
+#      退避した行を戻す」を実行する
+#   3. 空の Enter で PROMPT_COMMAND が走るので、古いプロンプトを消してから新しい幅で組み立てる
+__ps1_redraw_save() {
+    __PS1_SAVED_LINE=$READLINE_LINE __PS1_SAVED_POINT=$READLINE_POINT
+    READLINE_LINE= READLINE_POINT=0
+    __PS1_REDRAW=1
+}
+__ps1_redraw_restore() {
+    READLINE_LINE=$__PS1_SAVED_LINE READLINE_POINT=$__PS1_SAVED_POINT
+}
+bind -x '"\e[9998~": __ps1_redraw_save'
+bind -x '"\e[9997~": __ps1_redraw_restore'
+bind '"\e[9999~": "\e[9998~\C-j\e[9997~"'
+
+__ps1_on_winch() {
+    # 入力待ちのときだけ(コマンド実行中はシェルに SIGWINCH が来ないが、念のため)。
+    # コピーモード中に送るとキーがコピーモードの操作として解釈されるので送らない
+    [[ -n $TMUX && -n $TMUX_PANE && $__PS1_AT_PROMPT == 1 ]] || return
+    [[ $(tmux display -p -t "$TMUX_PANE" '#{pane_in_mode}') == 0 ]] || return
+    tmux send-keys -t "$TMUX_PANE" -H 1b 5b 39 39 39 39 7e   # \e[9999~
+}
+trap __ps1_on_winch WINCH
+# コマンドを実行する直前に「入力待ちではない」印を付ける(PS0 は実行直前に展開される。
+# 長さ 0 の部分文字列にして何も表示せず、算術式の代入だけを効かせる)
+PS0='${PS1:0:$((__PS1_AT_PROMPT=0))}'
+
+# 古いプロンプト(1行目 + 2行目)を消す。カーソルは空の Enter で2行目の次の行にいる。
+# 1行目の各行は tmux が今の幅で折り返し直している(リフロー)ので、その行数で数える
+__ps1_erase_old() {
+    local cols=${COLUMNS:-80} rows=1 w   # 1 = 2行目
+    for w in "${__PS1_L1_W[@]}"; do (( rows += w > cols ? (w + cols - 1) / cols : 1 )); done
+    # 画面の左上から \e[J で消すと、tmux(scroll-on-clear)は消さずに履歴へ押し出してしまう。
+    # 2列目から \e[J で消し、残った1列目は \e[K で消す
+    printf '\e[%dA\e[2G\e[J\r\e[K' "$rows"
+}
+
 # 直前のコマンドの終了ステータスから2行目の色を決め、1行目を組み立てる。
-# $? を他の処理に上書きされる前に受け取るため、PROMPT_COMMAND の先頭で呼ぶ
+# $? を他の処理に上書きされる前に受け取るため、PROMPT_COMMAND の先頭で呼ぶ。
+# 描き直しのときは空の Enter なので、前回のステータスを使う
 __ps1_status() {
-    if [ $? -eq 0 ]; then
+    local st=$?
+    if [[ $__PS1_REDRAW ]]; then st=$__PS1_LAST_ST; else __PS1_LAST_ST=$st; fi
+    if [ "$st" -eq 0 ]; then
         __PS1_BG=$'\e[48;5;75m' __PS1_FG=$'\e[38;5;75m'     # 成功: 水色 #61C3F9
     else
         __PS1_BG=$'\e[48;5;210m' __PS1_FG=$'\e[38;5;210m'   # 失敗: 赤 #FB9890
     fi
+    if [[ $__PS1_REDRAW ]]; then
+        __ps1_erase_old
+        __PS1_REDRAW=
+    fi
     __ps1_line1
+    __PS1_AT_PROMPT=1
 }
 # .bashrc を読み直しても二重登録しない(二重だと2回目が1回目の成功を拾って常に水色になる)
 [[ $PROMPT_COMMAND == *__ps1_status* ]] || PROMPT_COMMAND="__ps1_status${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
