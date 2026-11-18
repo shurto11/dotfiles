@@ -124,21 +124,73 @@ export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
 
 # カスタマイズTerminal
+# 配色: OKLCH で明るさ L=0.78・鮮やかさ C=0.12 をそろえ、色相だけを変えて統一感を出す。
+# (L を 0.80 以上にすると水色と赤が sRGB の範囲を超えて色が崩れる)
+# 濃紺と白も水色と同じ系統の色相(235〜255°)にしてある。文字は読みやすさを優先して黒にした(コントラスト比 10.0 以上)。
+#   番号 色      役割                 OKLCH                 (パレットの元の色)
+#   17   #142539 濃紺: 区切りの矢印     L=0.26 C=0.045 H=255 (#00005F)
+#   16   #000000 黒:   文字              (元から同じ色なので書き換えない。色0と違い透けない)
+#   75   #61C3F9 水色: 2行目(成功)       L=0.78 C=0.12  H=235 (#5FAFFF)
+#   72   #7CCD8E 緑:   user@host         L=0.78 C=0.12  H=150 (#5FAF87)
+#   209  #F2A26A オレンジ: 時刻          L=0.78 C=0.12  H=55  (#FF875F)
+#   210  #FB9890 赤:   2行目(失敗)       L=0.78 C=0.12  H=25  (#FF8787)
+#   255  #EEF7FC 白:   パス              L=0.97 C=0.012 H=235 (#EEEEEE)
+# fbterm は 24bit カラーを出せず 256 色パレットしか使えないので、上の番号を fbterm 独自の
+# シーケンス ESC[3;n;r;g;b} でこの色に書き換えて使う。番号は元の色が近く、tmux.conf と
+# vim(habamax) が使っていないものを選んである(fbterm 以外の端末では元の色で近似される)。
+# 色0(黒)は fbterm の壁紙モードで背景が透けるので使わない。
+# tmux はこのシーケンスを外へ通さないため、tmux の外(fbterm 直下のシェル)で送る。
+# パレットは fbterm を再起動すると元に戻るが、再起動後は必ずここを通って tmux に入る。
+if [ "$TERM" = "fbterm" ] && [ -z "$TMUX" ]; then
+    printf '\e[3;17;20;37;57}\e[3;75;97;195;249}\e[3;72;124;205;142}\e[3;209;242;162;106}\e[3;210;251;152;144}\e[3;255;238;247;252}'
+fi
 FMT_RESET='\[\e[0m\]'
-FMT_BOLD='\[\e[1m\]'
-FG_BLACK='\[\e[30m\]'
-FG_WHITE='\[\e[97m\]'
-BG_GREEN='\[\e[42m\]'
-BG_YELLOW='\[\e[43m\]'
-BG_CYAN='\[\e[46m\]'
+FG_NAVY='\[\e[38;5;17m\]'
+FG_BLACK='\[\e[38;5;16m\]'
+FG_WHITE='\[\e[38;5;255m\]'
+FG_GREEN='\[\e[38;5;72m\]'
+FG_ORANGE='\[\e[38;5;209m\]'
+BG_NAVY='\[\e[48;5;17m\]'
+BG_WHITE='\[\e[48;5;255m\]'
+BG_GREEN='\[\e[48;5;72m\]'
+BG_ORANGE='\[\e[48;5;209m\]'
+# Powerline の矢印 (U+E0B0)。ロケールに依存しないよう UTF-8 のバイト列で書く
+ARROW=$'\xee\x82\xb0'
+# アイコン。fbterm は全角幅でデザインされた Cica のアイコンを1マスで切ってしまうため、
+# 左右に分割した「Cica Split Icons」フォント(~/.local/share/fonts, fbtermrc で Cica の次に指定)
+# の半角2文字を並べて全角1個分として出す
+ICON_FOLDER=$'\xee\x80\x90\xee\x80\x91'   # nf-fa-folder  (U+F07B) -> U+E010 U+E011
+ICON_LAPTOP=$'\xee\x80\xa0\xee\x80\xa1'   # nf-fa-laptop  (U+F109) -> U+E020 U+E021
+ICON_CLOCK=$'\xee\x80\xae\xee\x80\xaf'    # nf-fa-clock_o (U+F017) -> U+E02E U+E02F
 
+# 矢印は「前のセグメントの色を文字色、次のセグメントの色を背景色」にして繋ぐ。
+# 色の切り替わりでは 前の色→濃紺→次の色 と矢印を2つ重ね、濃紺の矢印の縁取りを作る
 PS1=""
-PS1+="${BG_CYAN}${FG_BLACK} \w "
-PS1+="${BG_GREEN}${FG_BLACK} on \u@\h "
-PS1+="${BG_YELLOW}${FG_BLACK} at \t "
+PS1+="${BG_WHITE}${FG_BLACK} ${ICON_FOLDER} \w "
+PS1+="${BG_NAVY}${FG_WHITE}${ARROW}"
+PS1+="${BG_GREEN}${FG_NAVY}${ARROW}"
+PS1+="${FG_BLACK} ${ICON_LAPTOP} \u@\h "
+PS1+="${BG_NAVY}${FG_GREEN}${ARROW}"
+PS1+="${BG_ORANGE}${FG_NAVY}${ARROW}"
+PS1+="${FG_BLACK} ${ICON_CLOCK} \t "
+PS1+="${FMT_RESET}${FG_ORANGE}${ARROW}"   # 行末の矢印(端末の背景色の上にオレンジで描く)
 PS1+="${FMT_RESET}\n"
-PS1+="${FMT_BOLD}${FG_WHITE}> $ "
-PS1+="${FMT_RESET}"
+# 2行目: 直前のコマンドが成功なら水色、失敗なら赤のブロック。色は __ps1_status が毎回決める
+# (色の部分はシングルクォートで書き、プロンプトを出すたびに変数を展開させる)
+PS1+='\[${__PS1_BG}\]'"${FG_BLACK} $ ${FMT_RESET}"
+PS1+='\[${__PS1_FG}\]'"${ARROW}${FMT_RESET} "
+
+# 直前のコマンドの終了ステータスから2行目の色を決める。
+# $? を他の処理に上書きされる前に受け取るため、PROMPT_COMMAND の先頭で呼ぶ
+__ps1_status() {
+    if [ $? -eq 0 ]; then
+        __PS1_BG=$'\e[48;5;75m' __PS1_FG=$'\e[38;5;75m'     # 成功: 水色 #61C3F9
+    else
+        __PS1_BG=$'\e[48;5;210m' __PS1_FG=$'\e[38;5;210m'   # 失敗: 赤 #FB9890
+    fi
+}
+# .bashrc を読み直しても二重登録しない(二重だと2回目が1回目の成功を拾って常に水色になる)
+[[ $PROMPT_COMMAND == *__ps1_status* ]] || PROMPT_COMMAND="__ps1_status${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 
 # オリジナルコマンド
 # duckduckgo検索
