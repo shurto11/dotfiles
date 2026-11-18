@@ -144,16 +144,18 @@ export PATH="$HOME/bin:$PATH"
 if [ "$TERM" = "fbterm" ] && [ -z "$TMUX" ]; then
     printf '\e[3;17;20;37;57}\e[3;75;97;195;249}\e[3;72;124;205;142}\e[3;209;242;162;106}\e[3;210;251;152;144}\e[3;255;238;247;252}'
 fi
-FMT_RESET='\[\e[0m\]'
-FG_NAVY='\[\e[38;5;17m\]'
-FG_BLACK='\[\e[38;5;16m\]'
-FG_WHITE='\[\e[38;5;255m\]'
-FG_GREEN='\[\e[38;5;72m\]'
-FG_ORANGE='\[\e[38;5;209m\]'
-BG_NAVY='\[\e[48;5;17m\]'
-BG_WHITE='\[\e[48;5;255m\]'
-BG_GREEN='\[\e[48;5;72m\]'
-BG_ORANGE='\[\e[48;5;209m\]'
+# 色(エスケープシーケンスそのもの)。PS1 に直接書くときは \[ \] で、
+# 1行目を組み立てるときは \001 \002 で囲んで、readline に幅として数えさせない
+C_RESET=$'\e[0m'
+C_FG_NAVY=$'\e[38;5;17m'
+C_FG_BLACK=$'\e[38;5;16m'
+C_FG_WHITE=$'\e[38;5;255m'
+C_FG_GREEN=$'\e[38;5;72m'
+C_FG_ORANGE=$'\e[38;5;209m'
+C_BG_NAVY=$'\e[48;5;17m'
+C_BG_WHITE=$'\e[48;5;255m'
+C_BG_GREEN=$'\e[48;5;72m'
+C_BG_ORANGE=$'\e[48;5;209m'
 # Powerline の矢印 (U+E0B0)。ロケールに依存しないよう UTF-8 のバイト列で書く
 ARROW=$'\xee\x82\xb0'
 # アイコン。fbterm は全角幅でデザインされた Cica のアイコンを1マスで切ってしまうため、
@@ -163,24 +165,151 @@ ICON_FOLDER=$'\xee\x80\x90\xee\x80\x91'   # nf-fa-folder  (U+F07B) -> U+E010 U+E
 ICON_LAPTOP=$'\xee\x80\xa0\xee\x80\xa1'   # nf-fa-laptop  (U+F109) -> U+E020 U+E021
 ICON_CLOCK=$'\xee\x80\xae\xee\x80\xaf'    # nf-fa-clock_o (U+F017) -> U+E02E U+E02F
 
+# 1行目は端末の幅に合わせてプロンプトを出すたびに組み立てる(__ps1_line1 → __PS1_L1)。
+# 2行目: 直前のコマンドが成功なら水色、失敗なら赤のブロック。色は __ps1_status が毎回決める
+# (色の部分はシングルクォートで書き、プロンプトを出すたびに変数を展開させる)。頭の矢印は1行目の区切りと同じ濃紺
+PS1='${__PS1_L1}\n'
+PS1+='\[${__PS1_BG}\]\['"$C_FG_NAVY"'\]'"$ARROW"'\['"$C_FG_BLACK"'\] $ \['"$C_RESET"'\]'
+PS1+='\[${__PS1_FG}\]'"$ARROW"'\['"$C_RESET"'\] '
+
+# 文字の表示幅を __CW に入れる(全角は2、それ以外は1)。
+# アイコンと矢印(PUA)は fbterm も tmux も1マスとして扱うので1
+__ps1_charw() {
+    local n
+    printf -v n '%d' "'$1"
+    if (( n >= 0x1100 && (n <= 0x115F || (n >= 0x2E80 && n <= 0xA4CF) ||
+          (n >= 0xAC00 && n <= 0xD7A3) || (n >= 0xF900 && n <= 0xFAFF) ||
+          (n >= 0xFE30 && n <= 0xFE4F) || (n >= 0xFF00 && n <= 0xFF60) ||
+          (n >= 0xFFE0 && n <= 0xFFE6) || n >= 0x1F300) )); then
+        __CW=2
+    else
+        __CW=1
+    fi
+}
+
+# 文字列の表示幅を __SW に入れる
+__ps1_strw() {
+    local s=$1 i
+    __SW=0
+    if [[ $s != *[![:ascii:]]* ]]; then __SW=${#s}; return; fi   # ASCII だけなら文字数そのまま
+    for (( i = 0; i < ${#s}; i++ )); do
+        __ps1_charw "${s:i:1}"
+        (( __SW += __CW ))
+    done
+}
+
+# 1行目を組み立てて __PS1_L1 に入れる。幅は「端末の幅 - 1」まで
+# (最後の列まで埋めると readline が折り返したものとして数え、表示がずれることがあるため)。
+#   全部入る             : そのまま
+#   入らない             : 右から1文字ずつ切り捨てる
+#   パスだけでも入らない : パスを複数行に折り返す(他のセグメントは出さない)
 # 矢印は「前のセグメントの色を文字色、次のセグメントの色を背景色」にして繋ぐ。
 # 色の切り替わりでは 前の色→濃紺→次の色 と矢印を2つ重ね、濃紺の矢印の縁取りを作る
-PS1=""
-PS1+="${BG_WHITE}${FG_BLACK} ${ICON_FOLDER} \w "
-PS1+="${BG_NAVY}${FG_WHITE}${ARROW}"
-PS1+="${BG_GREEN}${FG_NAVY}${ARROW}"
-PS1+="${FG_BLACK} ${ICON_LAPTOP} \u@\h "
-PS1+="${BG_NAVY}${FG_GREEN}${ARROW}"
-PS1+="${BG_ORANGE}${FG_NAVY}${ARROW}"
-PS1+="${FG_BLACK} ${ICON_CLOCK} \t "
-PS1+="${FMT_RESET}${FG_ORANGE}${ARROW}"   # 行末の矢印(端末の背景色の上にオレンジで描く)
-PS1+="${FMT_RESET}\n"
-# 2行目: 直前のコマンドが成功なら水色、失敗なら赤のブロック。色は __ps1_status が毎回決める
-# (色の部分はシングルクォートで書き、プロンプトを出すたびに変数を展開させる)
-PS1+='\[${__PS1_BG}\]'"${FG_NAVY}${ARROW}${FG_BLACK} $ ${FMT_RESET}"   # 頭の矢印は1行目の区切りと同じ濃紺
-PS1+='\[${__PS1_FG}\]'"${ARROW}${FMT_RESET} "
+__ps1_line1() {
+    local max=$(( ${COLUMNS:-80} - 1 ))
+    local s=$'\001' e=$'\002'   # readline に「幅に数えない」と伝える印(\[ \] と同じ)
+    local path now uh
+    case $PWD in   # \w と同じく、ホーム以下は ~ で表す
+        "$HOME" | "$HOME"/*) path="~${PWD#"$HOME"}" ;;
+        *) path=$PWD ;;
+    esac
+    printf -v now '%(%H:%M:%S)T' -1
+    uh="$USER@${HOSTNAME%%.*}"
 
-# 直前のコマンドの終了ステータスから2行目の色を決める。
+    __ps1_strw "$path"
+    local pw=$__SW
+    # パスのセグメント(" アイコン パス ")だけでも入らなければ折り返す。極端に狭いときは切り捨てる
+    if (( pw + 5 > max && max >= 8 )); then
+        __ps1_wrap_path "$path" "$max"
+        return
+    fi
+
+    # (スタイル, 文字列) を左から順に並べる
+    local -a st=(
+        "$C_BG_WHITE$C_FG_BLACK"  " $ICON_FOLDER $path "
+        "$C_BG_NAVY$C_FG_WHITE"   "$ARROW"
+        "$C_BG_GREEN$C_FG_NAVY"   "$ARROW"
+        "$C_FG_BLACK"             " $ICON_LAPTOP $uh "
+        "$C_BG_NAVY$C_FG_GREEN"   "$ARROW"
+        "$C_BG_ORANGE$C_FG_NAVY"  "$ARROW"
+        "$C_FG_BLACK"             " $ICON_CLOCK $now "
+        "$C_RESET$C_FG_ORANGE"    "$ARROW"   # 行末の矢印(端末の背景色の上にオレンジで描く)
+    )
+    local out= j t i c
+    # 全体の幅: パス(pw+5) + 矢印2 + user@host(+5) + 矢印2 + 時刻(+5) + 行末の矢印1
+    if (( pw + 5 + 2 + ${#uh} + 5 + 2 + ${#now} + 5 + 1 <= max )); then
+        for (( j = 0; j < ${#st[@]}; j += 2 )); do out+=$s${st[j]}$e${st[j+1]}; done
+    else
+        # 入らないので、幅の上限に達するまで左から1文字ずつ出す
+        local used=0
+        for (( j = 0; j < ${#st[@]}; j += 2 )); do
+            out+=$s${st[j]}$e
+            t=${st[j+1]}
+            for (( i = 0; i < ${#t}; i++ )); do
+                c=${t:i:1}
+                __ps1_charw "$c"
+                (( used + __CW > max )) && break 2
+                out+=$c
+                (( used += __CW ))
+            done
+        done
+    fi
+    __PS1_L1=$out$s$C_RESET$e
+}
+
+# パスを幅 max に収まるよう複数行に折り返して __PS1_L1 に入れる。
+# できるだけ「/」の直後で折り、1つの名前が1行に入らないときだけ途中で切る。
+# 各行は同じ幅にそろえて白い長方形にし、入るなら最後の行の右に矢印を付ける。
+__ps1_wrap_path() {
+    local path=$1 max=$2 s=$'\001' e=$'\002'
+    local lim=$(( max - 5 ))   # 行頭の " アイコン " (4) と行末の空白 (1) を除いた、パスに使える幅
+    local -a lines=() widths=()
+    local line= lw=0 rest=$path tok tw i c
+    while [[ -n $rest ]]; do
+        # 「/」までをひとかたまりにして詰めていく
+        if [[ $rest == */* ]]; then tok=${rest%%/*}/; else tok=$rest; fi
+        rest=${rest:${#tok}}
+        __ps1_strw "$tok"
+        tw=$__SW
+        if (( lw + tw <= lim )); then
+            line+=$tok; (( lw += tw )); continue
+        fi
+        if (( lw > 0 )); then
+            lines+=("$line"); widths+=("$lw"); line= lw=0
+        fi
+        if (( tw <= lim )); then
+            line=$tok; lw=$tw; continue
+        fi
+        # 1行に入らない長い名前は文字単位で切る
+        for (( i = 0; i < ${#tok}; i++ )); do
+            c=${tok:i:1}
+            __ps1_charw "$c"
+            if (( lw + __CW > lim )); then
+                lines+=("$line"); widths+=("$lw"); line= lw=0
+            fi
+            line+=$c; (( lw += __CW ))
+        done
+    done
+    (( lw > 0 )) && { lines+=("$line"); widths+=("$lw"); }
+
+    local bw=0 w k pad out=
+    for w in "${widths[@]}"; do (( w > bw )) && bw=$w; done
+    for (( k = 0; k < ${#lines[@]}; k++ )); do
+        printf -v pad '%*s' $(( bw - widths[k] )) ''
+        (( k > 0 )) && out+=$'\n'
+        if (( k == 0 )); then
+            out+="$s$C_BG_WHITE$C_FG_BLACK$e $ICON_FOLDER ${lines[k]}$pad "
+        else
+            out+="$s$C_BG_WHITE$C_FG_BLACK$e    ${lines[k]}$pad "   # 2行目以降はパスの頭にそろえる
+        fi
+        out+=$s$C_RESET$e
+    done
+    # 長方形の幅は bw+5。矢印の1マスが残っていれば最後の行に付ける
+    (( bw + 5 < max )) && out+="$s$C_FG_WHITE$e$ARROW$s$C_RESET$e"
+    __PS1_L1=$out
+}
+
+# 直前のコマンドの終了ステータスから2行目の色を決め、1行目を組み立てる。
 # $? を他の処理に上書きされる前に受け取るため、PROMPT_COMMAND の先頭で呼ぶ
 __ps1_status() {
     if [ $? -eq 0 ]; then
@@ -188,6 +317,7 @@ __ps1_status() {
     else
         __PS1_BG=$'\e[48;5;210m' __PS1_FG=$'\e[38;5;210m'   # 失敗: 赤 #FB9890
     fi
+    __ps1_line1
 }
 # .bashrc を読み直しても二重登録しない(二重だと2回目が1回目の成功を拾って常に水色になる)
 [[ $PROMPT_COMMAND == *__ps1_status* ]] || PROMPT_COMMAND="__ps1_status${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
