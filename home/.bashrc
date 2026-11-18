@@ -126,15 +126,16 @@ export PATH="$HOME/bin:$PATH"
 # カスタマイズTerminal
 # 配色: OKLCH で明るさ L=0.78・鮮やかさ C=0.12 をそろえ、色相だけを変えて統一感を出す。
 # (L を 0.80 以上にすると水色と赤が sRGB の範囲を超えて色が崩れる)
-# 濃紺と白も水色と同じ系統の色相(235〜255°)にしてある。文字は読みやすさを優先して黒にした(コントラスト比 10.0 以上)。
+# 紫の色相 310° は、水色(235°)と赤(25° = 385°)のちょうど中間にとった。
+# 濃紺も水色と同じ系統の色相(255°)にしてある。文字は読みやすさを優先して黒にした(コントラスト比 10.0 以上)。
 #   番号 色      役割                 OKLCH                 (パレットの元の色)
 #   17   #142539 濃紺: 区切りの矢印     L=0.26 C=0.045 H=255 (#00005F)
 #   16   #000000 黒:   文字              (元から同じ色なので書き換えない。色0と違い透けない)
-#   75   #61C3F9 水色: 2行目(成功)       L=0.78 C=0.12  H=235 (#5FAFFF)
+#   75   #61C3F9 水色: パス              L=0.78 C=0.12  H=235 (#5FAFFF)
 #   72   #7CCD8E 緑:   user@host         L=0.78 C=0.12  H=150 (#5FAF87)
 #   209  #F2A26A オレンジ: 時刻          L=0.78 C=0.12  H=55  (#FF875F)
+#   183  #CFA1F1 紫:   2行目(成功)       L=0.78 C=0.12  H=310 (#D7AFFF)
 #   210  #FB9890 赤:   2行目(失敗)       L=0.78 C=0.12  H=25  (#FF8787)
-#   255  #EEF7FC 白:   パス              L=0.97 C=0.012 H=235 (#EEEEEE)
 # fbterm は 24bit カラーを出せず 256 色パレットしか使えないので、上の番号を fbterm 独自の
 # シーケンス ESC[3;n;r;g;b} でこの色に書き換えて使う。番号は元の色が近く、tmux.conf と
 # vim(habamax) が使っていないものを選んである(fbterm 以外の端末では元の色で近似される)。
@@ -142,20 +143,24 @@ export PATH="$HOME/bin:$PATH"
 # tmux はこのシーケンスを外へ通さないため、tmux の外(fbterm 直下のシェル)で送る。
 # パレットは fbterm を再起動すると元に戻るが、再起動後は必ずここを通って tmux に入る。
 if [ "$TERM" = "fbterm" ] && [ -z "$TMUX" ]; then
-    printf '\e[3;17;20;37;57}\e[3;75;97;195;249}\e[3;72;124;205;142}\e[3;209;242;162;106}\e[3;210;251;152;144}\e[3;255;238;247;252}'
+    printf '\e[3;17;20;37;57}\e[3;75;97;195;249}\e[3;72;124;205;142}\e[3;209;242;162;106}\e[3;183;207;161;241}\e[3;210;251;152;144}'
 fi
 # 色(エスケープシーケンスそのもの)。PS1 に直接書くときは \[ \] で、
 # 1行目を組み立てるときは \001 \002 で囲んで、readline に幅として数えさせない
 C_RESET=$'\e[0m'
 C_FG_NAVY=$'\e[38;5;17m'
 C_FG_BLACK=$'\e[38;5;16m'
-C_FG_WHITE=$'\e[38;5;255m'
+C_FG_BLUE=$'\e[38;5;75m'
 C_FG_GREEN=$'\e[38;5;72m'
 C_FG_ORANGE=$'\e[38;5;209m'
+C_FG_PURPLE=$'\e[38;5;183m'
+C_FG_RED=$'\e[38;5;210m'
 C_BG_NAVY=$'\e[48;5;17m'
-C_BG_WHITE=$'\e[48;5;255m'
+C_BG_BLUE=$'\e[48;5;75m'
 C_BG_GREEN=$'\e[48;5;72m'
 C_BG_ORANGE=$'\e[48;5;209m'
+C_BG_PURPLE=$'\e[48;5;183m'
+C_BG_RED=$'\e[48;5;210m'
 # Powerline の矢印 (U+E0B0)。ロケールに依存しないよう UTF-8 のバイト列で書く
 ARROW=$'\xee\x82\xb0'
 # アクティブでないペインで使う矢印 ❱ (U+2771)。Cica で半角幅なので fbterm でも欠けない
@@ -227,8 +232,8 @@ __ps1_line1() {
     local -a st
     if (( __PS1_ACTIVE )); then
         st=(
-            "$C_BG_WHITE$C_FG_BLACK"  " $ICON_FOLDER $path "
-            "$C_BG_NAVY$C_FG_WHITE"   "$ARROW"
+            "$C_BG_BLUE$C_FG_BLACK"   " $ICON_FOLDER $path "
+            "$C_BG_NAVY$C_FG_BLUE"    "$ARROW"
             "$C_BG_GREEN$C_FG_NAVY"   "$ARROW"
             "$C_FG_BLACK"             " $ICON_LAPTOP $uh "
             "$C_BG_NAVY$C_FG_GREEN"   "$ARROW"
@@ -238,8 +243,8 @@ __ps1_line1() {
         )
     else
         st=(
-            "$C_RESET$C_FG_WHITE"     " $ICON_FOLDER $path "
-            "$C_FG_WHITE"             "$ANGLE"
+            "$C_RESET$C_FG_BLUE"      " $ICON_FOLDER $path "
+            "$C_FG_BLUE"              "$ANGLE"
             "$C_FG_GREEN"             "$ANGLE"
             "$C_FG_GREEN"             " $ICON_LAPTOP $uh "
             "$C_FG_GREEN"             "$ANGLE"
@@ -274,7 +279,7 @@ __ps1_line1() {
 
 # パスを幅 max に収まるよう複数行に折り返して __PS1_L1 に入れる。
 # できるだけ「/」の直後で折り、1つの名前が1行に入らないときだけ途中で切る。
-# 各行は同じ幅にそろえて白い長方形にし、入るなら最後の行の右に矢印を付ける。
+# 各行は同じ幅にそろえて水色の長方形にし、入るなら最後の行の右に矢印を付ける。
 __ps1_wrap_path() {
     local path=$1 max=$2 s=$'\001' e=$'\002'
     local lim=$(( max - 5 ))   # 行頭の " アイコン " (4) と行末の空白 (1) を除いた、パスに使える幅
@@ -310,9 +315,9 @@ __ps1_wrap_path() {
     local bw=0 w k pad out= sty arrow
     for w in "${widths[@]}"; do (( w > bw )) && bw=$w; done
     if (( __PS1_ACTIVE )); then
-        sty=$C_BG_WHITE$C_FG_BLACK arrow=$ARROW
+        sty=$C_BG_BLUE$C_FG_BLACK arrow=$ARROW
     else
-        sty=$C_RESET$C_FG_WHITE arrow=$ANGLE
+        sty=$C_RESET$C_FG_BLUE arrow=$ANGLE
     fi
     __PS1_L1_W=()
     for (( k = 0; k < ${#lines[@]}; k++ )); do
@@ -328,20 +333,20 @@ __ps1_wrap_path() {
     done
     # 長方形の幅は bw+5。矢印の1マスが残っていれば最後の行に付ける
     if (( bw + 5 < max )); then
-        out+="$s$C_FG_WHITE$e$arrow$s$C_RESET$e"
+        out+="$s$C_FG_BLUE$e$arrow$s$C_RESET$e"
         (( __PS1_L1_W[-1] += 1 ))
     fi
     __PS1_L1=$out
 }
 
 # 2行目を組み立てて __PS1_L2 に入れる。$1 = 直前のコマンドの終了ステータス。
-# 成功なら水色、失敗なら赤のブロック。頭の矢印は1行目の区切りと同じ濃紺
+# 成功なら紫、失敗なら赤のブロック。頭の矢印は1行目の区切りと同じ濃紺
 __ps1_line2() {
     local s=$'\001' e=$'\002' bg fg
     if (( $1 == 0 )); then
-        bg=$'\e[48;5;75m' fg=$'\e[38;5;75m'     # 成功: 水色 #61C3F9
+        bg=$C_BG_PURPLE fg=$C_FG_PURPLE   # 成功: 紫 #CFA1F1
     else
-        bg=$'\e[48;5;210m' fg=$'\e[38;5;210m'   # 失敗: 赤 #FB9890
+        bg=$C_BG_RED fg=$C_FG_RED         # 失敗: 赤 #FB9890
     fi
     if (( __PS1_ACTIVE )); then
         __PS1_L2="$s$bg$C_FG_NAVY$e$ARROW$s$C_FG_BLACK$e \$ $s$C_RESET$fg$e$ARROW$s$C_RESET$e "
@@ -594,7 +599,7 @@ __ps1_status() {
     [[ -n $TMUX && -n $TMUX_PANE ]] && __ps1_hist_put "$path" "$now" "$st" "${COLUMNS:-80}" "$redraw"
     __PS1_AT_PROMPT=1 __PS1_FOCUS_OFF=$'\e[?1004l'
 }
-# .bashrc を読み直しても二重登録しない(二重だと2回目が1回目の成功を拾って常に水色になる)
+# .bashrc を読み直しても二重登録しない(二重だと2回目が1回目の成功を拾って常に紫になる)
 [[ $PROMPT_COMMAND == *__ps1_status* ]] || PROMPT_COMMAND="__ps1_status${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 
 # オリジナルコマンド
