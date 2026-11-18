@@ -201,7 +201,9 @@ __ps1_strw() {
     done
 }
 
-# 1行目を組み立てて __PS1_L1 に入れる。幅は「端末の幅 - 1」まで
+# 1行目を組み立てて __PS1_L1 に入れる。$1 = パス、$2 = 時刻、$3 = 端末の幅。
+# 過去のプロンプトを描き直すときに同じものを組み立て直せるよう、値は引数で受け取る。
+# 幅は「端末の幅 - 1」まで
 # (最後の列まで埋めると readline が折り返したものとして数え、表示がずれることがあるため)。
 #   全部入る             : そのまま
 #   入らない             : 右から1文字ずつ切り捨てる
@@ -209,15 +211,9 @@ __ps1_strw() {
 # 矢印は「前のセグメントの色を文字色、次のセグメントの色を背景色」にして繋ぐ。
 # 色の切り替わりでは 前の色→濃紺→次の色 と矢印を2つ重ね、濃紺の矢印の縁取りを作る
 __ps1_line1() {
-    local max=$(( ${COLUMNS:-80} - 1 ))
+    local path=$1 now=$2 max=$(( $3 - 1 ))
     local s=$'\001' e=$'\002'   # readline に「幅に数えない」と伝える印(\[ \] と同じ)
-    local path now uh
-    case $PWD in   # \w と同じく、ホーム以下は ~ で表す
-        "$HOME" | "$HOME"/*) path="~${PWD#"$HOME"}" ;;
-        *) path=$PWD ;;
-    esac
-    printf -v now '%(%H:%M:%S)T' -1
-    uh="$USER@${HOSTNAME%%.*}"
+    local uh="$USER@${HOSTNAME%%.*}"
 
     __ps1_strw "$path"
     local pw=$__SW
@@ -430,21 +426,172 @@ __ps1_erase_old() {
     printf '\e[%dA\e[2G\e[J\r\e[K' "$rows"
 }
 
+# ---- 画面に残っている過去のプロンプトも、今の見た目に描き直す(tmux の中だけ) ----
+# readline が描き直せるのは今のプロンプトだけなので、過去のものは自分で上書きする。
+# プロンプトを出すたびに組み立てに使った値(パス・時刻・終了ステータス・幅)を覚えておき、
+# 見た目が変わったら次の手順で描き直す:
+#   1. tmux から画面の文字(色なし)を取り、覚えているプロンプトと文字が一致する場所を探す。
+#      矢印 ▶ と ❱ は同じ文字とみなす(見た目が違っても文字の並びと幅は同じ)
+#   2. 一致した場所に、今の見た目で組み立て直したものを上書きし、カーソルを元に戻す
+# 文字が一致しないもの(clear で消えた、ほかの出力で上書きされた)には何も描かない。
+# スクロールして画面の外(tmux の履歴)に出たものは書き換えられない。
+# ペインの幅が変わって tmux が折り返し直している(リフロー)ものは、今の幅で折り返して比べる
+__PS1_PAINTED=1                                    # 過去のプロンプトが今どちらの見た目か
+__PS1_HP=() __PS1_HN=() __PS1_HS=() __PS1_HC=()    # 覚えているプロンプト: パス、時刻、ステータス、幅
+__PS1_HMAX=50                                      # 覚えておく数(1画面に収まる数より多めに)
+
+# プロンプトを覚える。$1..$4 = パス、時刻、ステータス、幅。$5 が 1 なら一番新しいものを置き換える
+__ps1_hist_put() {
+    local i=${#__PS1_HP[@]}
+    (( $5 && i > 0 )) && (( i-- ))
+    __PS1_HP[i]=$1 __PS1_HN[i]=$2 __PS1_HS[i]=$3 __PS1_HC[i]=$4
+    if (( ${#__PS1_HP[@]} > __PS1_HMAX )); then
+        __PS1_HP=("${__PS1_HP[@]:1}") __PS1_HN=("${__PS1_HN[@]:1}")
+        __PS1_HS=("${__PS1_HS[@]:1}") __PS1_HC=("${__PS1_HC[@]:1}")
+    fi
+}
+
+# 文字列 $1 から \001..\002 で囲んだ部分(色)を除き、▶ を ❱ にそろえて、行末の空白を落としたものを __PT に入れる
+__ps1_plain() {
+    local rest=$1
+    __PT=
+    while [[ $rest == *$'\001'* ]]; do
+        __PT+=${rest%%$'\001'*}
+        rest=${rest#*$'\002'}
+    done
+    __PT+=$rest
+    __PT=${__PT//"$ARROW"/"$ANGLE"}
+    __PT=${__PT%"${__PT##*[! ]}"}
+}
+
+# 表示幅 $2 の文字列 $1(色付き)を、tmux と同じく幅 $3 で折り返して、1行ずつ __ROWS に足す
+# (全角の文字が行末に入りきらないときは次の行に送る)。
+# 2行目以降の頭には、それまでの色をすべて付け直して、その行だけで描けるようにする
+__ps1_split_rows() {
+    local str=$1 w=$2 cols=$3 row= esc= used=0 i c
+    if (( w <= cols )); then __ROWS+=("$str"); return; fi
+    for (( i = 0; i < ${#str}; i++ )); do
+        c=${str:i:1}
+        if [[ $c == $'\001' ]]; then   # 色(\001..\002)は幅に数えない
+            c=${str:i}; c=${c%%$'\002'*}$'\002'
+            esc+=$c row+=$c
+            (( i += ${#c} - 1 ))
+            continue
+        fi
+        __ps1_charw "$c"
+        if (( used + __CW > cols )); then __ROWS+=("$row"); row=$esc used=0; fi
+        row+=$c; (( used += __CW ))
+    done
+    __ROWS+=("$row")
+}
+
+# 画面に残っている過去のプロンプトを今の見た目(__PS1_ACTIVE)で描き直す。
+# $1 が 1 なら一番新しいもの(描き直し中の今のプロンプト)は除く
+__ps1_repaint_past() {
+    local last=$(( ${#__PS1_HP[@]} - 1 - $1 ))
+    (( last >= 0 )) || return
+
+    # 画面を取る前に、ここまでに書いた出力を tmux が全部処理し終えるのを待つ
+    # (コマンドの出力が残っていると、取った後で画面がスクロールして位置がずれる)。
+    # 挿入モード(\e[4h)を立て、tmux 側で立ったのが見えたら、それより前の出力は処理済み。
+    # 挿入モードは文字を書く前に戻す
+    local -a scr
+    local i
+    printf '\e[4h'
+    for (( i = 0; i < 50; i++ )); do
+        mapfile -t scr < <(tmux display -p -t "$TMUX_PANE" \
+            '#{insert_flag} #{alternate_on} #{cursor_y} #{pane_width}' \; capture-pane -p -t "$TMUX_PANE")
+        [[ ${scr[0]} == 1\ * ]] && break
+        sleep 0.01
+    done
+    printf '\e[4l'
+    local flag alt cy cols
+    read -r flag alt cy cols <<< "${scr[0]}"
+    [[ $flag == 1 && $alt == 0 ]] || return
+    scr=("${scr[@]:1}")
+
+    # 2行目の頭(「▶ $ ▶」か「❱ $ ❱」)がある行を、下から順に集める
+    local -a cand=()
+    local r t l2head="$ANGLE \$ $ANGLE"
+    for (( r = cy; r >= 0; r-- )); do
+        t=${scr[r]//"$ARROW"/"$ANGLE"}
+        [[ $t == "$l2head"* ]] && cand+=("$r")
+    done
+
+    # 新しいプロンプトから順に、まだ使っていない 2行目の候補の上に 1行目が一致するところを探す。
+    # 画面の上端で 1行目が一部だけ見えているものは、見えている行が一致すれば、その行だけ描く
+    local __PS1_L1 __PS1_L1_W __PS1_L2   # 今のプロンプトの値を壊さないように
+    local -a lines __ROWS
+    local ci=0 k j q n top ok out=$'\e7' rest
+    for (( k = last; k >= 0 && ci < ${#cand[@]}; k-- )); do
+        __ps1_line1 "${__PS1_HP[k]}" "${__PS1_HN[k]}" "${__PS1_HC[k]}"
+        __ps1_line2 "${__PS1_HS[k]}"
+        # 1行目を改行で分ける(パスを折り返したときは複数行)
+        lines=() rest=$__PS1_L1
+        while [[ $rest == *$'\n'* ]]; do lines+=("${rest%%$'\n'*}"); rest=${rest#*$'\n'}; done
+        lines+=("$rest")
+        __ROWS=()   # 1行目を、今の画面での行に分けたもの
+        for (( q = 0; q < ${#lines[@]}; q++ )); do
+            __ps1_split_rows "${lines[q]}" "${__PS1_L1_W[q]}" "$cols"
+        done
+        n=${#__ROWS[@]}
+        for (( j = ci; j < ${#cand[@]}; j++ )); do
+            top=$(( cand[j] - n ))
+            (( top + n - 1 >= 0 )) || continue   # 1行目が1行も見えていない
+            ok=1
+            for (( q = 0; q < n; q++ )); do
+                (( top + q < 0 )) && continue
+                t=${scr[top + q]//"$ARROW"/"$ANGLE"}
+                t=${t%"${t##*[! ]}"}
+                __ps1_plain "${__ROWS[q]}"
+                [[ $t == "$__PT" ]] || { ok=0; break; }
+            done
+            (( ok )) || continue
+            for (( q = 0; q < n; q++ )); do
+                (( top + q >= 0 )) && out+=$'\e['$(( top + q + 1 ))';1H'${__ROWS[q]//[$'\001\002']/}
+            done
+            out+=$'\e['$(( cand[j] + 1 ))';1H'${__PS1_L2//[$'\001\002']/}
+            ci=$(( j + 1 ))
+            break
+        done
+    done
+    # 画面の一番上に 2行目だけが残っている(1行目が画面の外に出た)ものは、どのプロンプトか
+    # 確かめられないので、成功か失敗かを画面の色(赤 = 210 を使っているか)から読み取って描く
+    if (( ${#cand[@]} > ci && cand[-1] == 0 )); then
+        local st=0 re='[34]8;5;210[;m]'
+        [[ $(tmux capture-pane -p -e -t "$TMUX_PANE" -S 0 -E 0) =~ $re ]] && st=1
+        __ps1_line2 "$st"
+        out+=$'\e[1;1H'${__PS1_L2//[$'\001\002']/}
+    fi
+    printf '%s' "$out"$'\e[0m\e8'
+}
+
 # プロンプトの1行目と2行目を組み立てる。
 # $? を他の処理に上書きされる前に受け取るため、PROMPT_COMMAND の先頭で呼ぶ。
 # 描き直しのときは空の Enter なので、前回のステータスを使い、古いプロンプトを消す
 __ps1_status() {
-    local st=$?
+    local st=$? redraw=0 path now
     if [[ $__PS1_REDRAW ]]; then
-        st=$__PS1_LAST_ST
+        st=$__PS1_LAST_ST redraw=1
         __ps1_erase_old
         __PS1_REDRAW=
     else
         __PS1_LAST_ST=$st
         [[ -n $TMUX && -n $TMUX_PANE ]] && __ps1_tmux_sync
     fi
-    __ps1_line1
+    # 見た目が変わっていたら(フォーカスが変わった、コマンドの実行中に変わっていた)、過去のものも描き直す
+    if [[ -n $TMUX && -n $TMUX_PANE ]] && (( __PS1_PAINTED != __PS1_ACTIVE )); then
+        __ps1_repaint_past "$redraw"
+        __PS1_PAINTED=$__PS1_ACTIVE
+    fi
+    case $PWD in   # \w と同じく、ホーム以下は ~ で表す
+        "$HOME" | "$HOME"/*) path="~${PWD#"$HOME"}" ;;
+        *) path=$PWD ;;
+    esac
+    printf -v now '%(%H:%M:%S)T' -1
+    __ps1_line1 "$path" "$now" "${COLUMNS:-80}"
     __ps1_line2 "$st"
+    [[ -n $TMUX && -n $TMUX_PANE ]] && __ps1_hist_put "$path" "$now" "$st" "${COLUMNS:-80}" "$redraw"
     __PS1_AT_PROMPT=1 __PS1_FOCUS_OFF=$'\e[?1004l'
 }
 # .bashrc を読み直しても二重登録しない(二重だと2回目が1回目の成功を拾って常に水色になる)
